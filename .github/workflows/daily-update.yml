@@ -1,0 +1,53 @@
+name: Daily Data Update
+
+on:
+  schedule:
+    # Beijing 9:00 AM = UTC 1:00 AM (Mon-Fri)
+    - cron: '0 1 * * 1-5'
+  workflow_dispatch:  # manual trigger
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch data
+        run: python scripts/fetch_all.py
+
+      - name: Compute spreads
+        run: python scripts/compute_spreads.py
+
+      - name: Check for changes
+        id: check
+        run: |
+          if git diff --quiet data/; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No data changes, skipping commit."
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Data changed, will commit."
+          fi
+
+      - name: Commit and push
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "data-bot"
+          git config user.email "data-bot@reits-tracker"
+          git add data/
+          git commit -m "data: auto-update $(date +%Y-%m-%d)"
+          git push
